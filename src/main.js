@@ -14,17 +14,61 @@ import {
 import * as AI from "./ai.js";
 import { render } from "./ui.js";
 
+const HUMAN_PLAYER_ID = "P1";
 const AI_PLAYER_ID = "P2";
 const AI_STEP_DELAY = 550;
+const TOAST_DURATION = 4500;
 
 const root = document.getElementById("app-root");
 
 let settings = { hideOpponentBoard: false, requiredLines: 3, mode: "pvp" };
 let state = null;
-let ui = { selectedCardIds: [], view: "setup" };
+let ui = { selectedCardIds: [], view: "setup", toast: null, pileModal: null, lastTurnSummary: null };
+
+let turnLogStart = 0;
+let lastScrollKey = null;
+let toastTimer = null;
 
 function doRender() {
   render(state, ui, settings, root);
+  maybeAutoScroll();
+}
+
+function maybeAutoScroll() {
+  if (!state || ui.view !== "game") return;
+  const perspectiveId = settings.mode === "ai" ? HUMAN_PLAYER_ID : state.currentPlayerId;
+  const isMyTurn = state.currentPlayerId === perspectiveId;
+  if (!isMyTurn) {
+    lastScrollKey = null;
+    return;
+  }
+
+  const key = `${state.currentPlayerId}:${state.phase}`;
+  if (key === lastScrollKey) return;
+  lastScrollKey = key;
+
+  let targetId = null;
+  if (state.phase === GAME_PHASE.MAIN_ACTION) targetId = "hand-section";
+  else if (state.phase === GAME_PHASE.BONUS_DRAW) targetId = "bonus-section";
+  else if (state.phase === GAME_PHASE.MARKET_PICK) targetId = "market-section";
+
+  if (targetId) {
+    const target = document.getElementById(targetId);
+    if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
+
+function showToast(title, lines) {
+  ui.toast = { title, lines: lines.length > 0 ? lines : ["(특별한 행동 없음)"] };
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    ui.toast = null;
+    doRender();
+  }, TOAST_DURATION);
+}
+
+function summarizeTurnLog(lines) {
+  return lines.filter((l) => !l.startsWith("---") && !l.includes("섞어 새 뽑기 덱을 만듭니다"));
 }
 
 function schedule(fn) {
@@ -40,7 +84,10 @@ function startNewGame() {
     requiredLines: settings.requiredLines,
     p2Name: settings.mode === "ai" ? "AI" : "Player 2",
   });
-  ui = { selectedCardIds: [], view: "game" };
+  ui = { selectedCardIds: [], view: "game", toast: null, pileModal: null, lastTurnSummary: null };
+  turnLogStart = 0;
+  lastScrollKey = null;
+  clearTimeout(toastTimer);
   doRender();
 }
 
@@ -65,17 +112,30 @@ function goToMarketPick() {
 }
 
 function completeTurn() {
+  const finishedPlayerId = state.currentPlayerId;
+  const turnLines = summarizeTurnLog(state.log.slice(turnLogStart));
+
   endTurn(state);
+  turnLogStart = state.log.length;
   ui.selectedCardIds = [];
+  ui.pileModal = null;
 
   if (isAiTurn()) {
     ui.view = "game";
     doRender();
     schedule(runAiMainAction);
-  } else {
-    ui.view = settings.mode === "ai" ? "game" : "pass";
-    doRender();
+    return;
   }
+
+  if (settings.mode === "ai" && finishedPlayerId === AI_PLAYER_ID) {
+    showToast(`${state.players[AI_PLAYER_ID].name}가 한 행동`, turnLines);
+  }
+  if (settings.mode === "pvp") {
+    ui.lastTurnSummary = { playerName: state.players[finishedPlayerId].name, lines: turnLines };
+  }
+
+  ui.view = settings.mode === "ai" ? "game" : "pass";
+  doRender();
 }
 
 function afterMainActionResolved(result) {
@@ -171,7 +231,9 @@ function handleAction(action, target) {
 
     case "back-to-setup": {
       state = null;
-      ui = { selectedCardIds: [], view: "setup" };
+      ui = { selectedCardIds: [], view: "setup", toast: null, pileModal: null, lastTurnSummary: null };
+      lastScrollKey = null;
+      clearTimeout(toastTimer);
       doRender();
       break;
     }
@@ -226,6 +288,18 @@ function handleAction(action, target) {
 
     case "pass-continue": {
       ui.view = "game";
+      doRender();
+      break;
+    }
+
+    case "show-pile": {
+      ui.pileModal = { kind: target.dataset.pile };
+      doRender();
+      break;
+    }
+
+    case "close-pile-modal": {
+      ui.pileModal = null;
       doRender();
       break;
     }
