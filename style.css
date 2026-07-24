@@ -1,0 +1,293 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 16px;
+  font-family: "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  background: #f4f5f7;
+  color: #1f2430;
+}
+
+.game-title {
+  text-align: center;
+  margin: 0 0 12px;
+  letter-spacing: 2px;
+  color: #2b3a67;
+}
+
+.app {
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.panel {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.panel-title {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.opponent-panel {
+  opacity: 0.92;
+}
+
+.sub-title {
+  margin: 10px 0 6px;
+  font-size: 13px;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.meta-row {
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+  color: #444;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.meta-row span {
+  background: #eef0f4;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.cell {
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef0f4;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #2b3a67;
+  border: 2px solid transparent;
+}
+
+.cell.marked {
+  background: #2b7a4b;
+  color: #fff;
+}
+
+.cell.highlight {
+  border-color: #f5a623;
+  box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.4);
+}
+
+.turn-banner {
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #2b3a67;
+}
+
+.last-called {
+  font-size: 13px;
+  color: #555;
+  margin-bottom: 8px;
+}
+
+.market-cards {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.card {
+  min-width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  border: none;
+  background: #dde3f0;
+  color: #1f2430;
+  font-weight: 700;
+  font-size: 16px;
+  cursor: default;
+}
+
+.card.pickable,
+.hand-card:not([disabled]) {
+  cursor: pointer;
+  background: #c8d4ee;
+}
+
+.card.pickable:hover,
+.hand-card:not([disabled]):hover {
+  background: #b0c1e8;
+}
+
+.hand-card.selected,
+.hand-card.selected:hover {
+  background: #f5a623;
+  color: #fff;
+}
+
+.card:disabled {
+  opacity: 0.6;
+}
+
+.market-deck-count {
+  font-size: 12px;
+  color: #666;
+  margin-top: 6px;
+}
+
+.sum-preview {
+  background: #eef0f4;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+.hand-wrap {
+  margin-top: 6px;
+}
+
+.hand {
+  display: flex;
+  gap: 8px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: #2b7a4b;
+  color: #fff;
+}
+
+.btn-primary:disabled {
+  background: #a9c9b6;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: #dde3f0;
+  color: #1f2430;
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bonus-box {
+  margin-top: 12px;
+  border-top: 1px dashed #ccc;
+  padding-top: 10px;
+}
+
+.bonus-revealed {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.bonus-card {
+  background: #ffe0a3;
+}
+
+.bonus-total {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.bonus-total.busted {
+  color: #c0392b;
+  font-weight: 700;
+}
+
+.bonus-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.log-panel {
+  max-height: 160px;
+}
+
+.log-list {
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 12px;
+  color: #444;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.log-line {
+  border-bottom: 1px dotted #eee;
+  padding: 2px 0;
+}
+
+.empty-note {
+  font-size: 12px;
+  color: #999;
+  padding: 8px;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 24, 35, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.overlay-box {
+  background: #fff;
+  border-radius: 12px;
+  padding: 28px 32px;
+  text-align: center;
+  max-width: 360px;
+}
+
+.overlay-box h2 {
+  margin-top: 0;
+}
+
+@media (max-width: 480px) {
+  .board {
+    max-width: 100%;
+  }
+  .meta-row {
+    font-size: 11px;
+  }
+}
