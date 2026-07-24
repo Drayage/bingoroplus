@@ -62,14 +62,17 @@ function createPlayer(id, name) {
   };
 }
 
-export function createGameState() {
+export function createGameState(options = {}) {
   const marketDeck = generateMarketDeck();
   const marketCards = marketDeck.splice(0, CONFIG.MARKET_DISPLAY_SIZE);
+  const requiredLines = options.requiredLines || CONFIG.REQUIRED_BINGO_LINES;
+  const p2Name = options.p2Name || "Player 2";
 
   return {
     phase: GAME_PHASE.MAIN_ACTION,
     currentPlayerId: "P1",
     winnerId: null,
+    requiredLines,
 
     marketDeck,
     marketCards,
@@ -79,7 +82,7 @@ export function createGameState() {
 
     players: {
       P1: createPlayer("P1", "Player 1"),
-      P2: createPlayer("P2", "Player 2"),
+      P2: createPlayer("P2", p2Name),
     },
 
     bonusTurn: {
@@ -392,8 +395,9 @@ export function recalculateAllBingoLines(state) {
 export function checkWinner(state, actingPlayerId) {
   const p1 = state.players.P1;
   const p2 = state.players.P2;
-  const p1Wins = p1.bingoCount >= CONFIG.REQUIRED_BINGO_LINES;
-  const p2Wins = p2.bingoCount >= CONFIG.REQUIRED_BINGO_LINES;
+  const required = state.requiredLines || CONFIG.REQUIRED_BINGO_LINES;
+  const p1Wins = p1.bingoCount >= required;
+  const p2Wins = p2.bingoCount >= required;
 
   let winnerId = null;
   if (p1Wins && p2Wins) {

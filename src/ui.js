@@ -1,6 +1,8 @@
 import { CONFIG } from "./config.js";
 import { getSelectedCardSum, isValidNormalCall, isMarketExhausted } from "./gameLogic.js";
 
+const HUMAN_ID = "P1";
+
 function otherPlayerId(playerId) {
   return playerId === "P1" ? "P2" : "P1";
 }
@@ -12,7 +14,7 @@ function el(tag, className, html) {
   return node;
 }
 
-function renderBoard(player, { highlightNumber, highlightIfMarked } = {}) {
+function renderBoard(player, { highlightNumber, highlightIfMarked, hideUnmarked } = {}) {
   const grid = el("div", "board");
   const sorted = player.bingoBoard.slice().sort((a, b) => a.row - b.row || a.col - b.col);
   for (const cell of sorted) {
@@ -26,25 +28,28 @@ function renderBoard(player, { highlightNumber, highlightIfMarked } = {}) {
         classes.push("highlight");
       }
     }
-    const cellEl = el("div", classes.join(" "), String(cell.number));
+    const hidden = hideUnmarked && !cell.marked;
+    if (hidden) classes.push("hidden-cell");
+    const cellEl = el("div", classes.join(" "), hidden ? "" : String(cell.number));
     grid.appendChild(cellEl);
   }
   return grid;
 }
 
-function renderOpponentPanel(state, selfId) {
-  const oppId = otherPlayerId(selfId);
+function renderOpponentPanel(state, perspectiveId, settings) {
+  const oppId = otherPlayerId(perspectiveId);
   const opp = state.players[oppId];
   const panel = el("section", "panel opponent-panel");
 
   let highlightNumber = null;
   let highlightIfMarked;
-  if (state.bonusTurn.active && state.bonusTurn.playerId === selfId) {
+  if (state.bonusTurn.active && state.bonusTurn.playerId === perspectiveId) {
     highlightNumber = state.bonusTurn.total;
     highlightIfMarked = true; // opponent cell would be cancelled if marked
   }
 
-  panel.appendChild(el("h2", "panel-title", `${opp.name} (상대)`));
+  const title = settings.mode === "ai" ? `${opp.name} 🤖` : `${opp.name} (상대)`;
+  panel.appendChild(el("h2", "panel-title", title));
 
   const meta = el(
     "div",
@@ -55,15 +60,20 @@ function renderOpponentPanel(state, selfId) {
       `<span>손패 ${opp.hand.length}장</span>`
   );
   panel.appendChild(meta);
-  panel.appendChild(renderBoard(opp, { highlightNumber, highlightIfMarked }));
+  panel.appendChild(
+    renderBoard(opp, { highlightNumber, highlightIfMarked, hideUnmarked: settings.hideOpponentBoard })
+  );
+  if (settings.hideOpponentBoard) {
+    panel.appendChild(el("div", "empty-note", "빙고판 비공개 - 체크된 숫자만 표시됩니다."));
+  }
   return panel;
 }
 
-function renderMarket(state) {
+function renderMarket(state, isMyTurn) {
   const wrap = el("div", "market");
   wrap.appendChild(el("h3", "sub-title", "시장"));
   const row = el("div", "market-cards");
-  const pickable = state.phase === "MARKET_PICK";
+  const pickable = state.phase === "MARKET_PICK" && isMyTurn;
 
   for (const card of state.marketCards) {
     const cardEl = el("button", "card market-card" + (pickable ? " pickable" : ""), String(card.value));
@@ -82,8 +92,11 @@ function renderMarket(state) {
   return wrap;
 }
 
-function phaseMessage(state) {
+function phaseMessage(state, settings, isMyTurn) {
   const player = state.players[state.currentPlayerId];
+  if (settings.mode === "ai" && !isMyTurn) {
+    return `${player.name}가 턴을 진행 중입니다...`;
+  }
   switch (state.phase) {
     case "MAIN_ACTION":
       return `${player.name}의 턴 - 카드를 선택해 숫자를 호명하거나, 손패를 버리세요.`;
@@ -100,17 +113,21 @@ function phaseMessage(state) {
   }
 }
 
-function renderCenterPanel(state, ui) {
+function renderCenterPanel(state, ui, settings, isMyTurn) {
   const panel = el("section", "panel center-panel");
-  panel.appendChild(el("div", "turn-banner", phaseMessage(state)));
+  const banner = el("div", "turn-banner", phaseMessage(state, settings, isMyTurn));
+  if (settings.mode === "ai" && !isMyTurn && state.phase !== "GAME_OVER") {
+    banner.classList.add("thinking");
+  }
+  panel.appendChild(banner);
 
   if (state.lastCalledNumber != null) {
     panel.appendChild(el("div", "last-called", `최근 호명: ${state.lastCalledNumber}`));
   }
 
-  panel.appendChild(renderMarket(state));
+  panel.appendChild(renderMarket(state, isMyTurn));
 
-  if (state.phase === "MAIN_ACTION") {
+  if (state.phase === "MAIN_ACTION" && isMyTurn) {
     const player = state.players[state.currentPlayerId];
     const sum = getSelectedCardSum(player.hand, ui.selectedCardIds);
     const preview = el("div", "sum-preview");
@@ -127,13 +144,13 @@ function renderCenterPanel(state, ui) {
   }
 
   if (state.bonusTurn.active) {
-    panel.appendChild(renderBonusPanel(state));
+    panel.appendChild(renderBonusPanel(state, isMyTurn));
   }
 
   return panel;
 }
 
-function renderBonusPanel(state) {
+function renderBonusPanel(state, isMyTurn) {
   const box = el("div", "bonus-box");
   box.appendChild(el("h3", "sub-title", "보너스턴"));
 
@@ -153,28 +170,30 @@ function renderBonusPanel(state) {
     )
   );
 
-  const btnRow = el("div", "bonus-buttons");
-  const hitBtn = el("button", "btn btn-primary", "히트");
-  hitBtn.dataset.action = "bonus-hit";
-  const standBtn = el("button", "btn btn-secondary", "스탠드");
-  standBtn.dataset.action = "bonus-stand";
-  btnRow.appendChild(hitBtn);
-  btnRow.appendChild(standBtn);
-  box.appendChild(btnRow);
+  if (isMyTurn) {
+    const btnRow = el("div", "bonus-buttons");
+    const hitBtn = el("button", "btn btn-primary", "히트");
+    hitBtn.dataset.action = "bonus-hit";
+    const standBtn = el("button", "btn btn-secondary", "스탠드");
+    standBtn.dataset.action = "bonus-stand";
+    btnRow.appendChild(hitBtn);
+    btnRow.appendChild(standBtn);
+    box.appendChild(btnRow);
+  }
 
   return box;
 }
 
-function renderMyPanel(state, ui) {
-  const player = state.players[state.currentPlayerId];
+function renderMyPanel(state, ui, settings, perspectiveId, isMyTurn) {
+  const player = state.players[perspectiveId];
   const panel = el("section", "panel my-panel");
 
   let highlightNumber = null;
   let highlightIfMarked;
-  if (state.phase === "MAIN_ACTION" && ui.selectedCardIds.length > 0) {
+  if (isMyTurn && state.phase === "MAIN_ACTION" && ui.selectedCardIds.length > 0) {
     const sum = getSelectedCardSum(player.hand, ui.selectedCardIds);
-    if (isValidNormalCall(state, state.currentPlayerId, sum)) highlightNumber = sum;
-  } else if (state.bonusTurn.active) {
+    if (isValidNormalCall(state, perspectiveId, sum)) highlightNumber = sum;
+  } else if (state.bonusTurn.active && state.bonusTurn.playerId === perspectiveId) {
     highlightNumber = state.bonusTurn.total;
     highlightIfMarked = false; // only an unmarked cell of mine can still be checked
   }
@@ -193,7 +212,7 @@ function renderMyPanel(state, ui) {
   const handWrap = el("div", "hand-wrap");
   handWrap.appendChild(el("h3", "sub-title", "손패"));
   const handRow = el("div", "hand");
-  const canSelect = state.phase === "MAIN_ACTION";
+  const canSelect = isMyTurn && state.phase === "MAIN_ACTION";
   for (const card of player.hand) {
     const selected = ui.selectedCardIds.includes(card.id);
     const cardEl = el("button", "card hand-card" + (selected ? " selected" : ""), String(card.value));
@@ -210,12 +229,12 @@ function renderMyPanel(state, ui) {
   handWrap.appendChild(handRow);
   panel.appendChild(handWrap);
 
-  if (state.phase === "MAIN_ACTION") {
+  if (isMyTurn && state.phase === "MAIN_ACTION") {
     const sum = getSelectedCardSum(player.hand, ui.selectedCardIds);
     const canUse =
       ui.selectedCardIds.length > 0 &&
       ui.selectedCardIds.length <= 3 &&
-      isValidNormalCall(state, state.currentPlayerId, sum);
+      isValidNormalCall(state, perspectiveId, sum);
 
     const actions = el("div", "action-buttons");
     const useBtn = el("button", "btn btn-primary", "카드 사용");
@@ -274,25 +293,97 @@ function renderGameOverOverlay(state) {
       `${state.players.P1.name}: ${state.players.P1.bingoCount}줄 / ${state.players.P2.name}: ${state.players.P2.bingoCount}줄`
     )
   );
-  const btn = el("button", "btn btn-primary", "다시 하기");
-  btn.dataset.action = "restart-game";
-  box.appendChild(btn);
+  const btnRow = el("div", "action-buttons overlay-buttons");
+  const againBtn = el("button", "btn btn-primary", "다시 하기");
+  againBtn.dataset.action = "restart-game";
+  const setupBtn = el("button", "btn btn-secondary", "설정으로");
+  setupBtn.dataset.action = "back-to-setup";
+  btnRow.appendChild(againBtn);
+  btnRow.appendChild(setupBtn);
+  box.appendChild(btnRow);
   overlay.appendChild(box);
   return overlay;
 }
 
-export function render(state, ui, root) {
+const LINE_OPTIONS = [1, 2, 3, 4, 5];
+
+export function renderSetupScreen(settings) {
+  const root = el("div", "setup-screen");
+  root.appendChild(el("div", "title-badge", "SUM BINGO"));
+  root.appendChild(el("p", "setup-subtitle", "숫자 합성 덱빌딩 빙고"));
+
+  const form = el("div", "setup-form");
+
+  // Opponent board visibility
+  const sectionVisibility = el("div", "setup-section");
+  sectionVisibility.appendChild(el("h3", "setup-label", "상대 빙고판"));
+  const toggleRow = el("label", "setup-toggle");
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = settings.hideOpponentBoard;
+  checkbox.dataset.action = "toggle-hide-opponent";
+  toggleRow.appendChild(checkbox);
+  toggleRow.appendChild(document.createTextNode(" 상대 빙고판 비공개 (체크된 숫자만 표시)"));
+  sectionVisibility.appendChild(toggleRow);
+  form.appendChild(sectionVisibility);
+
+  // Required lines
+  const sectionLines = el("div", "setup-section");
+  sectionLines.appendChild(el("h3", "setup-label", `완성 빙고 줄 수: ${settings.requiredLines}`));
+  const linesRow = el("div", "setup-lines");
+  for (const n of LINE_OPTIONS) {
+    const btn = el("button", "chip" + (settings.requiredLines === n ? " chip-active" : ""), String(n));
+    btn.dataset.action = "set-lines";
+    btn.dataset.lines = String(n);
+    linesRow.appendChild(btn);
+  }
+  sectionLines.appendChild(linesRow);
+  form.appendChild(sectionLines);
+
+  // Mode
+  const sectionMode = el("div", "setup-section");
+  sectionMode.appendChild(el("h3", "setup-label", "대전 방식"));
+  const modeRow = el("div", "setup-lines");
+  const pvpBtn = el("button", "chip" + (settings.mode === "pvp" ? " chip-active" : ""), "패스 앤 플레이 (2인)");
+  pvpBtn.dataset.action = "set-mode";
+  pvpBtn.dataset.mode = "pvp";
+  const aiBtn = el("button", "chip" + (settings.mode === "ai" ? " chip-active" : ""), "AI와 대전");
+  aiBtn.dataset.action = "set-mode";
+  aiBtn.dataset.mode = "ai";
+  modeRow.appendChild(pvpBtn);
+  modeRow.appendChild(aiBtn);
+  sectionMode.appendChild(modeRow);
+  form.appendChild(sectionMode);
+
+  root.appendChild(form);
+
+  const startBtn = el("button", "btn btn-primary start-btn", "게임 시작");
+  startBtn.dataset.action = "start-game";
+  root.appendChild(startBtn);
+
+  return root;
+}
+
+export function render(state, ui, settings, root) {
   root.innerHTML = "";
+
+  if (ui.view === "setup") {
+    root.appendChild(renderSetupScreen(settings));
+    return;
+  }
 
   if (ui.view === "pass") {
     root.appendChild(renderPassOverlay(state));
     return;
   }
 
+  const perspectiveId = settings.mode === "ai" ? HUMAN_ID : state.currentPlayerId;
+  const isMyTurn = state.currentPlayerId === perspectiveId;
+
   const app = el("div", "app");
-  app.appendChild(renderOpponentPanel(state, state.currentPlayerId));
-  app.appendChild(renderCenterPanel(state, ui));
-  app.appendChild(renderMyPanel(state, ui));
+  app.appendChild(renderOpponentPanel(state, perspectiveId, settings));
+  app.appendChild(renderCenterPanel(state, ui, settings, isMyTurn));
+  app.appendChild(renderMyPanel(state, ui, settings, perspectiveId, isMyTurn));
   app.appendChild(renderLog(state));
   root.appendChild(app);
 
