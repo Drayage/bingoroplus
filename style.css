@@ -440,6 +440,15 @@ body {
   font-size: 16px;
 }
 
+.pile-card-clickable {
+  cursor: pointer;
+  background: #c8d4ee;
+}
+
+.pile-card-clickable:hover {
+  background: #b0c1e8;
+}
+
 .toast {
   position: fixed;
   top: 12px;

@@ -59,6 +59,8 @@ function createPlayer(id, name) {
     bonusRevealCards: [],
     completedLines: [],
     bingoCount: 0,
+    discardStreak: 0,
+    bonusDrawReady: false,
   };
 }
 
@@ -155,7 +157,21 @@ export function discardEntireHand(state, playerId) {
   const player = state.players[playerId];
   player.discardPile.push(...player.hand);
   player.hand = [];
+  player.discardStreak += 1;
+  if (player.discardStreak >= 3) {
+    player.bonusDrawReady = true;
+  }
   log(state, `${player.name}이(가) 손패를 전부 버렸습니다.`);
+}
+
+/** Permanently remove a card from a player's discard pile (it re-enters no pile). */
+export function banishCardFromDiscard(state, playerId, cardId) {
+  const player = state.players[playerId];
+  const idx = player.discardPile.findIndex((c) => c.id === cardId);
+  if (idx === -1) return false;
+  const [card] = player.discardPile.splice(idx, 1);
+  log(state, `${player.name}이(가) 버린 카드 더미에서 ${card.value}을(를) 완전히 제거했습니다.`);
+  return true;
 }
 
 /**
@@ -181,6 +197,7 @@ export function useSelectedCards(state, playerId, selectedCardIds) {
   const cardText = selectedCards.map((c) => c.value).join(" + ");
   log(state, `${player.name}이(가) ${cardText}를 사용해 ${calledNumber}을(를) 호명했습니다.`);
 
+  player.discardStreak = 0;
   moveCardsFromHandToDiscard(state, playerId, selectedCardIds);
   resolveNormalCall(state, playerId, calledNumber);
   recalculateAllBingoLines(state);
@@ -213,9 +230,10 @@ export function drawCard(state, playerId) {
   return card;
 }
 
-export function refillHandToThree(state, playerId) {
+export function refillHandToThree(state, playerId, extraCards = 0) {
   const player = state.players[playerId];
-  while (player.hand.length < CONFIG.HAND_SIZE) {
+  const target = CONFIG.HAND_SIZE + extraCards;
+  while (player.hand.length < target) {
     const card = drawCard(state, playerId);
     if (!card) break;
   }
@@ -426,13 +444,13 @@ export function checkWinner(state, actingPlayerId) {
 // ---------------------------------------------------------------------------
 
 /** Run the market-pick + refill-hand steps that follow the main action. */
-export function runMarketAndRefill(state, playerId, marketCardId) {
+export function runMarketAndRefill(state, playerId, marketCardId, extraHandCards = 0) {
   if (marketCardId && !isMarketExhausted(state)) {
     acquireMarketCard(state, playerId, marketCardId);
   } else if (isMarketExhausted(state)) {
     log(state, "시장의 카드가 모두 소진되어 획득을 진행하지 않습니다.");
   }
-  refillHandToThree(state, playerId);
+  refillHandToThree(state, playerId, extraHandCards);
 }
 
 export function endTurn(state) {

@@ -143,3 +143,28 @@ export function chooseMarketCard(state, aiPlayerId) {
 
   return best.id;
 }
+
+/**
+ * Decide which of the AI's own discarded cards to permanently banish when
+ * offered a line-completion reward. Avoids cards that would still directly
+ * complete an unmarked cell; among the rest, prefers removing the largest
+ * (least flexible) value.
+ */
+export function chooseCardToBanish(state, aiPlayerId) {
+  const player = state.players[aiPlayerId];
+  if (player.discardPile.length === 0) return null;
+
+  let best = player.discardPile[0];
+  let bestScore = -Infinity;
+
+  for (const card of player.discardPile) {
+    const stillUseful = player.bingoBoard.some((c) => c.number === card.value && !c.marked);
+    const score = stillUseful ? -100 : card.value;
+    if (score > bestScore) {
+      bestScore = score;
+      best = card;
+    }
+  }
+
+  return best.id;
+}

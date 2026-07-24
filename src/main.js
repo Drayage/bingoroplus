@@ -3,6 +3,7 @@ import {
   createGameState,
   useSelectedCards,
   discardEntireHand,
+  banishCardFromDiscard,
   startBonusTurn,
   bonusHit,
   bonusStand,
@@ -21,13 +22,24 @@ const TOAST_DURATION = 4500;
 
 const root = document.getElementById("app-root");
 
-let settings = { hideOpponentBoard: false, requiredLines: 3, mode: "pvp" };
+let settings = {
+  hideOpponentBoard: false,
+  requiredLines: 3,
+  mode: "pvp",
+  rewardBanishCard: true,
+  rewardExtraTurn: true,
+  rewardDiscardCorrection: true,
+};
 let state = null;
-let ui = { selectedCardIds: [], view: "setup", toast: null, pileModal: null, lastTurnSummary: null };
+let ui = { selectedCardIds: [], view: "setup", toast: null, pileModal: null, banishPrompt: null, lastTurnSummary: null };
 
 let turnLogStart = 0;
 let lastScrollKey = null;
 let toastTimer = null;
+let linesBeforeCurrentAction = 0;
+let currentTurnExtraHandCards = 0;
+let extraTurnCredits = { P1: 0, P2: 0 };
+let pendingBanish = { P1: 0, P2: 0 };
 
 function doRender() {
   render(state, ui, settings, root);
@@ -84,17 +96,74 @@ function startNewGame() {
     requiredLines: settings.requiredLines,
     p2Name: settings.mode === "ai" ? "AI" : "Player 2",
   });
-  ui = { selectedCardIds: [], view: "game", toast: null, pileModal: null, lastTurnSummary: null };
+  ui = { selectedCardIds: [], view: "game", toast: null, pileModal: null, banishPrompt: null, lastTurnSummary: null };
   turnLogStart = 0;
   lastScrollKey = null;
+  linesBeforeCurrentAction = 0;
+  currentTurnExtraHandCards = 0;
+  extraTurnCredits = { P1: 0, P2: 0 };
+  pendingBanish = { P1: 0, P2: 0 };
   clearTimeout(toastTimer);
   doRender();
 }
 
-function goToMarketPick() {
+/** Queue line-completion rewards earned by actorId for `gained` newly completed lines. */
+function queueLineRewards(actorId, gained) {
+  if (settings.rewardExtraTurn) {
+    extraTurnCredits[actorId] = (extraTurnCredits[actorId] || 0) + gained;
+  }
+  if (settings.rewardBanishCard) {
+    pendingBanish[actorId] = (pendingBanish[actorId] || 0) + gained;
+  }
+}
+
+/** Entry point after a turn's line-changing action (call/bonus) has fully resolved. */
+function goToMarketPick(usedCardsThisTurn) {
+  const actorId = state.currentPlayerId;
+
+  const gained = state.players[actorId].bingoCount - linesBeforeCurrentAction;
+  if (gained > 0) queueLineRewards(actorId, gained);
+
+  currentTurnExtraHandCards = 0;
+  if (usedCardsThisTurn && settings.rewardDiscardCorrection && state.players[actorId].bonusDrawReady) {
+    currentTurnExtraHandCards = 1;
+    state.players[actorId].bonusDrawReady = false;
+    state.log.push(`${state.players[actorId].name}이(가) 연속 버리기 보정으로 카드를 1장 더 뽑습니다.`);
+  }
+
+  proceedPastBanish();
+}
+
+function proceedPastBanish() {
+  const actorId = state.currentPlayerId;
+
+  if (settings.rewardBanishCard && (pendingBanish[actorId] || 0) > 0) {
+    const player = state.players[actorId];
+    if (player.discardPile.length === 0) {
+      pendingBanish[actorId] = 0;
+    } else if (settings.mode === "ai" && actorId === AI_PLAYER_ID) {
+      const cardId = AI.chooseCardToBanish(state, actorId);
+      if (cardId) banishCardFromDiscard(state, actorId, cardId);
+      pendingBanish[actorId] -= 1;
+      doRender();
+      schedule(proceedPastBanish);
+      return;
+    } else {
+      ui.banishPrompt = { playerId: actorId };
+      doRender();
+      return;
+    }
+  }
+
+  continueToMarketPick();
+}
+
+function continueToMarketPick() {
+  const actorId = state.currentPlayerId;
   state.phase = GAME_PHASE.MARKET_PICK;
+
   if (isMarketExhausted(state)) {
-    runMarketAndRefill(state, state.currentPlayerId, null);
+    runMarketAndRefill(state, actorId, null, currentTurnExtraHandCards);
     completeTurn();
     return;
   }
@@ -102,8 +171,8 @@ function goToMarketPick() {
   if (isAiTurn()) {
     doRender();
     schedule(() => {
-      const cardId = AI.chooseMarketCard(state, state.currentPlayerId);
-      runMarketAndRefill(state, state.currentPlayerId, cardId);
+      const cardId = AI.chooseMarketCard(state, actorId);
+      runMarketAndRefill(state, actorId, cardId, currentTurnExtraHandCards);
       completeTurn();
     });
   } else {
@@ -113,10 +182,29 @@ function goToMarketPick() {
 
 function completeTurn() {
   const finishedPlayerId = state.currentPlayerId;
-  const turnLines = summarizeTurnLog(state.log.slice(turnLogStart));
 
+  if ((extraTurnCredits[finishedPlayerId] || 0) > 0) {
+    extraTurnCredits[finishedPlayerId] -= 1;
+    state.log.push(`${state.players[finishedPlayerId].name}이(가) 한 줄 완성 보상으로 한 턴을 더 진행합니다!`);
+    ui.selectedCardIds = [];
+    ui.pileModal = null;
+    state.phase = GAME_PHASE.MAIN_ACTION;
+    linesBeforeCurrentAction = state.players[finishedPlayerId].bingoCount;
+
+    if (isAiTurn()) {
+      doRender();
+      schedule(runAiMainAction);
+    } else {
+      ui.view = "game";
+      doRender();
+    }
+    return;
+  }
+
+  const turnLines = summarizeTurnLog(state.log.slice(turnLogStart));
   endTurn(state);
   turnLogStart = state.log.length;
+  linesBeforeCurrentAction = state.players[state.currentPlayerId].bingoCount;
   ui.selectedCardIds = [];
   ui.pileModal = null;
 
@@ -155,7 +243,7 @@ function afterMainActionResolved(result) {
       afterBonusTurnEnds();
     }
   } else {
-    goToMarketPick();
+    goToMarketPick(true);
   }
 }
 
@@ -163,7 +251,7 @@ function afterBonusTurnEnds() {
   const winner = checkWinner(state, state.currentPlayerId);
   doRender();
   if (winner) return;
-  goToMarketPick();
+  goToMarketPick(true);
 }
 
 function aiBonusStep() {
@@ -189,7 +277,7 @@ function runAiMainAction() {
   if (decision.type === "discard") {
     discardEntireHand(state, pid);
     doRender();
-    schedule(goToMarketPick);
+    schedule(() => goToMarketPick(false));
     return;
   }
 
@@ -197,7 +285,7 @@ function runAiMainAction() {
   if (!result.ok) {
     discardEntireHand(state, pid);
     doRender();
-    schedule(goToMarketPick);
+    schedule(() => goToMarketPick(false));
     return;
   }
 
@@ -209,6 +297,21 @@ function handleAction(action, target) {
   switch (action) {
     case "toggle-hide-opponent": {
       settings.hideOpponentBoard = target.checked;
+      break;
+    }
+
+    case "toggle-reward-banish": {
+      settings.rewardBanishCard = target.checked;
+      break;
+    }
+
+    case "toggle-reward-extra-turn": {
+      settings.rewardExtraTurn = target.checked;
+      break;
+    }
+
+    case "toggle-discard-correction": {
+      settings.rewardDiscardCorrection = target.checked;
       break;
     }
 
@@ -231,7 +334,7 @@ function handleAction(action, target) {
 
     case "back-to-setup": {
       state = null;
-      ui = { selectedCardIds: [], view: "setup", toast: null, pileModal: null, lastTurnSummary: null };
+      ui = { selectedCardIds: [], view: "setup", toast: null, pileModal: null, banishPrompt: null, lastTurnSummary: null };
       lastScrollKey = null;
       clearTimeout(toastTimer);
       doRender();
@@ -260,12 +363,12 @@ function handleAction(action, target) {
     case "discard-hand": {
       discardEntireHand(state, state.currentPlayerId);
       ui.selectedCardIds = [];
-      goToMarketPick();
+      goToMarketPick(false);
       break;
     }
 
     case "pick-market": {
-      runMarketAndRefill(state, state.currentPlayerId, target.dataset.cardId);
+      runMarketAndRefill(state, state.currentPlayerId, target.dataset.cardId, currentTurnExtraHandCards);
       completeTurn();
       break;
     }
@@ -301,6 +404,23 @@ function handleAction(action, target) {
     case "close-pile-modal": {
       ui.pileModal = null;
       doRender();
+      break;
+    }
+
+    case "banish-card": {
+      const actorId = ui.banishPrompt.playerId;
+      banishCardFromDiscard(state, actorId, target.dataset.cardId);
+      pendingBanish[actorId] = Math.max(0, (pendingBanish[actorId] || 0) - 1);
+      ui.banishPrompt = null;
+      proceedPastBanish();
+      break;
+    }
+
+    case "skip-banish": {
+      const actorId = ui.banishPrompt.playerId;
+      pendingBanish[actorId] = Math.max(0, (pendingBanish[actorId] || 0) - 1);
+      ui.banishPrompt = null;
+      proceedPastBanish();
       break;
     }
 

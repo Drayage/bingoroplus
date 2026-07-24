@@ -347,6 +347,34 @@ function renderPileModal(kind, player) {
   return overlay;
 }
 
+function renderBanishPrompt(state, playerId) {
+  const overlay = el("div", "overlay");
+  const box = el("div", "overlay-box pile-modal");
+  const player = state.players[playerId];
+  box.appendChild(el("h2", null, "🎁 한 줄 완성 보상"));
+  box.appendChild(el("p", null, "버린 카드 더미에서 한 장을 완전히 제거할 수 있습니다."));
+
+  if (player.discardPile.length === 0) {
+    box.appendChild(el("p", "empty-note", "버린 카드가 없습니다."));
+  } else {
+    const sorted = player.discardPile.slice().sort((a, b) => a.value - b.value);
+    const grid = el("div", "pile-grid");
+    for (const card of sorted) {
+      const btn = el("button", "card pile-card pile-card-clickable", String(card.value));
+      btn.dataset.action = "banish-card";
+      btn.dataset.cardId = card.id;
+      grid.appendChild(btn);
+    }
+    box.appendChild(grid);
+  }
+
+  const skipBtn = el("button", "btn btn-secondary", "건너뛰기");
+  skipBtn.dataset.action = "skip-banish";
+  box.appendChild(skipBtn);
+  overlay.appendChild(box);
+  return overlay;
+}
+
 function renderToast(toast) {
   const box = el("div", "toast");
   box.appendChild(el("div", "toast-title", toast.title));
@@ -358,6 +386,17 @@ function renderToast(toast) {
 
 const LINE_OPTIONS = [1, 2, 3, 4, 5];
 
+function renderToggleRow(action, checked, labelText) {
+  const row = el("label", "setup-toggle");
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = checked;
+  checkbox.dataset.action = action;
+  row.appendChild(checkbox);
+  row.appendChild(document.createTextNode(" " + labelText));
+  return row;
+}
+
 export function renderSetupScreen(settings) {
   const root = el("div", "setup-screen");
   root.appendChild(el("div", "title-badge", "SUM BINGO"));
@@ -368,15 +407,31 @@ export function renderSetupScreen(settings) {
   // Opponent board visibility
   const sectionVisibility = el("div", "setup-section");
   sectionVisibility.appendChild(el("h3", "setup-label", "상대 빙고판"));
-  const toggleRow = el("label", "setup-toggle");
-  const checkbox = document.createElement("input");
-  checkbox.type = "checkbox";
-  checkbox.checked = settings.hideOpponentBoard;
-  checkbox.dataset.action = "toggle-hide-opponent";
-  toggleRow.appendChild(checkbox);
-  toggleRow.appendChild(document.createTextNode(" 상대 빙고판 비공개 (체크된 숫자만 표시)"));
-  sectionVisibility.appendChild(toggleRow);
+  sectionVisibility.appendChild(
+    renderToggleRow("toggle-hide-opponent", settings.hideOpponentBoard, "상대 빙고판 비공개 (체크된 숫자만 표시)")
+  );
   form.appendChild(sectionVisibility);
+
+  // Line-completion rewards (multi-select)
+  const sectionRewards = el("div", "setup-section");
+  sectionRewards.appendChild(el("h3", "setup-label", "한 줄 완성 보상 (복수 선택 가능)"));
+  sectionRewards.appendChild(
+    renderToggleRow("toggle-reward-banish", settings.rewardBanishCard, "버림 더미에서 카드 한 장 폐기")
+  );
+  sectionRewards.appendChild(renderToggleRow("toggle-reward-extra-turn", settings.rewardExtraTurn, "한 턴 더 진행"));
+  form.appendChild(sectionRewards);
+
+  // Discard-streak correction
+  const sectionCorrection = el("div", "setup-section");
+  sectionCorrection.appendChild(el("h3", "setup-label", "버리기 보정"));
+  sectionCorrection.appendChild(
+    renderToggleRow(
+      "toggle-discard-correction",
+      settings.rewardDiscardCorrection,
+      "3연속 버리기 후 카드 사용 시 다음 손패 4장 뽑기"
+    )
+  );
+  form.appendChild(sectionCorrection);
 
   // Required lines
   const sectionLines = el("div", "setup-section");
@@ -440,6 +495,8 @@ export function render(state, ui, settings, root) {
 
   if (state.phase === "GAME_OVER") {
     root.appendChild(renderGameOverOverlay(state));
+  } else if (ui.banishPrompt) {
+    root.appendChild(renderBanishPrompt(state, ui.banishPrompt.playerId));
   } else if (ui.pileModal) {
     root.appendChild(renderPileModal(ui.pileModal.kind, state.players[perspectiveId]));
   }
