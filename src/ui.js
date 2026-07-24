@@ -1,5 +1,5 @@
 import { CONFIG } from "./config.js";
-import { getSelectedCardSum, isValidNormalCall, isMarketExhausted } from "./gameLogic.js";
+import { getSelectedCardSum, isValidNormalCall, isMarketExhausted, getAchievableCalls } from "./gameLogic.js";
 
 const HUMAN_ID = "P1";
 
@@ -14,20 +14,37 @@ function el(tag, className, html) {
   return node;
 }
 
-function renderBoard(player, { highlightNumber, highlightIfMarked, hideUnmarked } = {}) {
+function recentChangeMapFor(state, playerId) {
+  const map = new Map();
+  for (const change of state.recentChanges || []) {
+    if (change.playerId === playerId) map.set(change.number, change.type);
+  }
+  return map;
+}
+
+function renderBoard(player, { highlightNumber, highlightIfMarked, hideUnmarked, possibleNumbers, recentChangeMap } = {}) {
   const grid = el("div", "board");
   const sorted = player.bingoBoard.slice().sort((a, b) => a.row - b.row || a.col - b.col);
   for (const cell of sorted) {
     const classes = ["cell"];
     if (cell.marked) classes.push("marked");
-    const matchesHighlight = highlightNumber != null && cell.number === highlightNumber;
-    if (matchesHighlight) {
-      if (highlightIfMarked === undefined) {
-        classes.push("highlight");
-      } else if (highlightIfMarked === cell.marked) {
-        classes.push("highlight");
+
+    const recentType = recentChangeMap && recentChangeMap.get(cell.number);
+    if (recentType) {
+      classes.push(recentType === "marked" ? "just-marked" : "just-cancelled");
+    } else {
+      const matchesHighlight = highlightNumber != null && cell.number === highlightNumber;
+      if (matchesHighlight) {
+        if (highlightIfMarked === undefined) {
+          classes.push("highlight");
+        } else if (highlightIfMarked === cell.marked) {
+          classes.push("highlight");
+        }
+      } else if (possibleNumbers && !cell.marked && possibleNumbers.has(cell.number)) {
+        classes.push("possible");
       }
     }
+
     const hidden = hideUnmarked && !cell.marked;
     if (hidden) classes.push("hidden-cell");
     const cellEl = el("div", classes.join(" "), hidden ? "" : String(cell.number));
@@ -61,7 +78,12 @@ function renderOpponentPanel(state, perspectiveId, settings) {
   );
   panel.appendChild(meta);
   panel.appendChild(
-    renderBoard(opp, { highlightNumber, highlightIfMarked, hideUnmarked: settings.hideOpponentBoard })
+    renderBoard(opp, {
+      highlightNumber,
+      highlightIfMarked,
+      hideUnmarked: settings.hideOpponentBoard,
+      recentChangeMap: recentChangeMapFor(state, oppId),
+    })
   );
   if (settings.hideOpponentBoard) {
     panel.appendChild(el("div", "empty-note", "빙고판 비공개 - 체크된 숫자만 표시됩니다."));
@@ -199,7 +221,12 @@ function renderMyPanel(state, ui, settings, perspectiveId, isMyTurn) {
 
   let highlightNumber = null;
   let highlightIfMarked;
-  if (isMyTurn && state.phase === "MAIN_ACTION" && ui.selectedCardIds.length > 0) {
+  const inMainAction = isMyTurn && state.phase === "MAIN_ACTION";
+  const achievable = inMainAction ? getAchievableCalls(state, perspectiveId) : [];
+  const possibleNumbers = new Set(achievable.map((a) => a.sum));
+  const usableCardIds = new Set(achievable.flatMap((a) => a.cardIds));
+
+  if (inMainAction && ui.selectedCardIds.length > 0) {
     const sum = getSelectedCardSum(player.hand, ui.selectedCardIds);
     if (isValidNormalCall(state, perspectiveId, sum)) highlightNumber = sum;
   } else if (state.bonusTurn.active && state.bonusTurn.playerId === perspectiveId) {
@@ -213,7 +240,14 @@ function renderMyPanel(state, ui, settings, perspectiveId, isMyTurn) {
   meta.appendChild(metaPileButton("덱", player.drawPile.length, "draw"));
   meta.appendChild(metaPileButton("버림", player.discardPile.length, "discard"));
   panel.appendChild(meta);
-  panel.appendChild(renderBoard(player, { highlightNumber, highlightIfMarked }));
+  panel.appendChild(
+    renderBoard(player, {
+      highlightNumber,
+      highlightIfMarked,
+      possibleNumbers,
+      recentChangeMap: recentChangeMapFor(state, perspectiveId),
+    })
+  );
 
   const handWrap = el("div", "hand-wrap");
   handWrap.id = "hand-section";
@@ -222,7 +256,9 @@ function renderMyPanel(state, ui, settings, perspectiveId, isMyTurn) {
   const canSelect = isMyTurn && state.phase === "MAIN_ACTION";
   for (const card of player.hand) {
     const selected = ui.selectedCardIds.includes(card.id);
-    const cardEl = el("button", "card hand-card" + (selected ? " selected" : ""), String(card.value));
+    const usable = !selected && usableCardIds.has(card.id);
+    const classes = "card hand-card" + (selected ? " selected" : "") + (usable ? " usable" : "");
+    const cardEl = el("button", classes, String(card.value));
     cardEl.disabled = !canSelect;
     if (canSelect) {
       cardEl.dataset.action = "toggle-card";
@@ -242,6 +278,7 @@ function renderMyPanel(state, ui, settings, perspectiveId, isMyTurn) {
       ui.selectedCardIds.length > 0 &&
       ui.selectedCardIds.length <= 3 &&
       isValidNormalCall(state, perspectiveId, sum);
+    const noValidCalls = achievable.length === 0 && player.hand.length > 0;
 
     const actions = el("div", "action-buttons");
     const useBtn = el("button", "btn btn-primary", "카드 사용");
@@ -249,12 +286,20 @@ function renderMyPanel(state, ui, settings, perspectiveId, isMyTurn) {
     useBtn.disabled = !canUse;
     actions.appendChild(useBtn);
 
-    const discardBtn = el("button", "btn btn-secondary", "손패 버리기");
+    const discardBtn = el(
+      "button",
+      "btn btn-secondary" + (noValidCalls ? " btn-highlight" : ""),
+      "손패 버리기"
+    );
     discardBtn.dataset.action = "discard-hand";
     discardBtn.disabled = player.hand.length === 0;
     actions.appendChild(discardBtn);
 
     panel.appendChild(actions);
+
+    if (noValidCalls) {
+      panel.appendChild(el("div", "empty-note", "지금 손패로 만들 수 있는 숫자가 없습니다. 손패를 버려보세요."));
+    }
   }
 
   return panel;
@@ -283,9 +328,14 @@ function renderPassOverlay(state, ui) {
   if (ui.lastTurnSummary) {
     const summaryBox = el("div", "turn-summary");
     summaryBox.appendChild(el("h3", "turn-summary-title", `${ui.lastTurnSummary.playerName}의 지난 턴`));
-    for (const line of ui.lastTurnSummary.lines) {
-      summaryBox.appendChild(el("div", "turn-summary-line", line));
+    const tagRow = el("div", "tag-row");
+    const tags = ui.lastTurnSummary.lines;
+    if (tags.length === 0) {
+      tagRow.appendChild(el("span", "tag", "특별한 행동 없음"));
+    } else {
+      for (const tag of tags) tagRow.appendChild(el("span", "tag", tag));
     }
+    summaryBox.appendChild(tagRow);
     box.appendChild(summaryBox);
   }
 
@@ -378,9 +428,11 @@ function renderBanishPrompt(state, playerId) {
 function renderToast(toast) {
   const box = el("div", "toast");
   box.appendChild(el("div", "toast-title", toast.title));
+  const tagRow = el("div", "tag-row");
   for (const line of toast.lines) {
-    box.appendChild(el("div", "toast-line", line));
+    tagRow.appendChild(el("span", "tag tag-on-dark", line));
   }
+  box.appendChild(tagRow);
   return box;
 }
 

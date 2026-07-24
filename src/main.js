@@ -79,8 +79,33 @@ function showToast(title, lines) {
   }, TOAST_DURATION);
 }
 
-function summarizeTurnLog(lines) {
-  return lines.filter((l) => !l.startsWith("---") && !l.includes("섞어 새 뽑기 덱을 만듭니다"));
+/** Turn raw log lines from one turn into short tags, e.g. "호명 (14)", "내 빙고판 취소!". */
+function summarizeTurnLogCompact(lines, viewerName) {
+  const tags = [];
+  let m;
+  for (const line of lines) {
+    if ((m = line.match(/이\(가\) .+를 사용해 (\d+)을\(를\) 호명했습니다\.$/))) {
+      tags.push(`호명 (${m[1]})`);
+    } else if (line.match(/이\(가\) 손패를 전부 버렸습니다\.$/)) {
+      tags.push("버리기");
+    } else if ((m = line.match(/은\(는\) (\d+)을\(를\) 체크했습니다\.$/))) {
+      tags.push(`보너스호명 (${m[1]})`);
+    } else if (line.match(/이\(가\) \d+으로 버스트했습니다!$/)) {
+      tags.push("버스트");
+    } else if ((m = line.match(/^(.+)의 (\d+) 체크가 취소되었습니다\.$/))) {
+      tags.push(m[1] === viewerName ? "내 빙고판 취소!" : `${m[1]} 취소`);
+    } else if ((m = line.match(/이\(가\) 시장에서 (\d+)을\(를\) 가져갔습니다\.$/))) {
+      tags.push(`시장 (${m[1]})`);
+    } else if ((m = line.match(/이\(가\) 버린 카드 더미에서 (\d+)을\(를\) 완전히 제거했습니다\.$/))) {
+      tags.push(`카드 폐기 (${m[1]})`);
+    } else if (line.match(/한 줄 완성 보상으로 한 턴을 더 진행합니다!$/)) {
+      tags.push("한 턴 더!");
+    } else if (line.match(/연속 버리기 보정으로 카드를 1장 더 뽑습니다\.$/)) {
+      tags.push("보정 드로우");
+    }
+    // everything else (per-hit reveals, reshuffles, bonus-start, deck-exhausted notes) is dropped to stay concise
+  }
+  return tags;
 }
 
 function schedule(fn) {
@@ -201,7 +226,7 @@ function completeTurn() {
     return;
   }
 
-  const turnLines = summarizeTurnLog(state.log.slice(turnLogStart));
+  const rawTurnLines = state.log.slice(turnLogStart);
   endTurn(state);
   turnLogStart = state.log.length;
   linesBeforeCurrentAction = state.players[state.currentPlayerId].bingoCount;
@@ -215,11 +240,15 @@ function completeTurn() {
     return;
   }
 
+  // state.currentPlayerId is now the incoming player: the one who will see this summary.
+  const viewerName = state.players[state.currentPlayerId].name;
+  const tags = summarizeTurnLogCompact(rawTurnLines, viewerName);
+
   if (settings.mode === "ai" && finishedPlayerId === AI_PLAYER_ID) {
-    showToast(`${state.players[AI_PLAYER_ID].name}가 한 행동`, turnLines);
+    showToast(`${state.players[AI_PLAYER_ID].name}의 턴`, tags);
   }
   if (settings.mode === "pvp") {
-    ui.lastTurnSummary = { playerName: state.players[finishedPlayerId].name, lines: turnLines };
+    ui.lastTurnSummary = { playerName: state.players[finishedPlayerId].name, lines: tags };
   }
 
   ui.view = settings.mode === "ai" ? "game" : "pass";

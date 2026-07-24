@@ -81,6 +81,7 @@ export function createGameState(options = {}) {
     marketDiscard: [],
 
     lastCalledNumber: null,
+    recentChanges: [],
 
     players: {
       P1: createPlayer("P1", "Player 1"),
@@ -126,23 +127,51 @@ export function isValidNormalCall(state, playerId, number) {
   return true;
 }
 
+/**
+ * All valid normal-call combinations (1-3 cards) currently makeable from a
+ * player's hand: which cards to use and the board number it would call.
+ */
+export function getAchievableCalls(state, playerId) {
+  const hand = state.players[playerId].hand;
+  const combos = [];
+  for (let i = 0; i < hand.length; i++) combos.push([hand[i]]);
+  for (let i = 0; i < hand.length; i++) {
+    for (let j = i + 1; j < hand.length; j++) combos.push([hand[i], hand[j]]);
+  }
+  if (hand.length === 3) combos.push([hand[0], hand[1], hand[2]]);
+
+  const results = [];
+  for (const combo of combos) {
+    const sum = combo.reduce((s, c) => s + c.value, 0);
+    if (isValidNormalCall(state, playerId, sum)) {
+      results.push({ cardIds: combo.map((c) => c.id), sum });
+    }
+  }
+  return results;
+}
+
 export function resolveNormalCall(state, playerId, number) {
   state.lastCalledNumber = number;
 
   const player = state.players[playerId];
   const opponent = state.players[otherPlayerId(playerId)];
+  const changes = [];
 
   const ownCell = player.bingoBoard.find((c) => c.number === number);
   if (ownCell && !ownCell.marked) {
     ownCell.marked = true;
+    changes.push({ playerId, number, type: "marked" });
     log(state, `${player.name}이(가) ${number}을(를) 체크했습니다.`);
   }
 
   const oppCell = opponent.bingoBoard.find((c) => c.number === number);
   if (oppCell && !oppCell.marked) {
     oppCell.marked = true;
+    changes.push({ playerId: opponent.id, number, type: "marked" });
     log(state, `${opponent.name}도 ${number}을(를) 체크했습니다.`);
   }
+
+  state.recentChanges = changes;
 }
 
 /** Move the given card ids from a player's hand to their discard pile. */
@@ -333,18 +362,23 @@ export function bonusHit(state) {
 export function resolveBonusNumber(state, playerId, number) {
   const player = state.players[playerId];
   const opponent = state.players[otherPlayerId(playerId)];
+  const changes = [];
 
   const ownCell = player.bingoBoard.find((c) => c.number === number);
   if (ownCell && !ownCell.marked) {
     ownCell.marked = true;
+    changes.push({ playerId, number, type: "marked" });
     log(state, `${player.name}은(는) ${number}을(를) 체크했습니다.`);
   }
 
   const oppCell = opponent.bingoBoard.find((c) => c.number === number);
   if (oppCell && oppCell.marked) {
     oppCell.marked = false;
+    changes.push({ playerId: opponent.id, number, type: "unmarked" });
     log(state, `${opponent.name}의 ${number} 체크가 취소되었습니다.`);
   }
+
+  state.recentChanges = changes;
 }
 
 /**
@@ -357,6 +391,8 @@ export function finishBonusTurn(state, playerId, { applyEffect }) {
 
   if (applyEffect) {
     resolveBonusNumber(state, playerId, total);
+  } else {
+    state.recentChanges = [];
   }
 
   player.discardPile.push(...state.bonusTurn.revealedCards);

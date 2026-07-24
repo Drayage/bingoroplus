@@ -100,6 +100,21 @@ body {
   box-shadow: 0 0 0 2px rgba(245, 166, 35, 0.4);
 }
 
+.cell.possible {
+  border-color: rgba(245, 166, 35, 0.55);
+  box-shadow: 0 0 0 1px rgba(245, 166, 35, 0.25);
+}
+
+.cell.just-marked {
+  border-color: #84cc16;
+  box-shadow: 0 0 0 3px rgba(132, 204, 22, 0.5);
+}
+
+.cell.just-cancelled {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.5);
+}
+
 .cell.hidden-cell {
   background: #dfe2e8;
 }
@@ -164,6 +179,10 @@ body {
   color: #fff;
 }
 
+.hand-card.usable {
+  border: 2px solid #f5a623;
+}
+
 .card:disabled {
   opacity: 0.6;
 }
@@ -224,6 +243,16 @@ body {
 .btn-secondary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.btn-highlight {
+  box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.5);
+  animation: pulse-border 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(245, 166, 35, 0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(245, 166, 35, 0.12); }
 }
 
 .bonus-box {
@@ -413,10 +442,25 @@ body {
   color: #555;
 }
 
-.turn-summary-line {
-  font-size: 13px;
-  color: #333;
-  padding: 2px 0;
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag {
+  background: #dde3f0;
+  color: #1f2430;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.tag-on-dark {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
 }
 
 .pile-modal {
@@ -467,14 +511,8 @@ body {
 .toast-title {
   font-weight: 700;
   font-size: 13px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   color: #ffd479;
-}
-
-.toast-line {
-  font-size: 13px;
-  padding: 1px 0;
-  color: #eef0f4;
 }
 
 @media (max-width: 480px) {
