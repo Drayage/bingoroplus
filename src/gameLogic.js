@@ -97,6 +97,22 @@ export function createGameState(options = {}) {
     },
 
     log: [],
+
+    // --- Turn-flow bookkeeping ------------------------------------------
+    // Kept inside state (rather than module-level closure variables in
+    // main.js) so the whole session is one serializable blob — required for
+    // network play, where the host must be able to broadcast the complete
+    // turn-flow context after every transition. See main.js / net.js.
+    turnLogStart: 0,
+    linesBeforeCurrentAction: 0,
+    currentTurnExtraHandCards: 0,
+    extraTurnCredits: { P1: 0, P2: 0 },
+    pendingBanish: { P1: 0, P2: 0 },
+    // Non-null while a player must choose (or skip) a discard-pile card to
+    // banish as a line-completion reward. Always mirrors currentPlayerId
+    // while set. Part of state (not local `ui`) so a networked guest's
+    // client can tell it needs to render its own banish picker.
+    banishPrompt: null,
   };
 }
 

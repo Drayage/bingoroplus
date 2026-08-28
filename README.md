@@ -25,12 +25,30 @@ npx serve .
 - 게임 로그
 - 턴 안내 배너
 - 턴 교대 시 "기기 넘기기" 화면(상대 손패 비공개)
+- AI 대전 (간단한 휴리스틱 AI)
+- 온라인 대전 (Firebase Realtime Database, 호스트-권위 구조 — 아래 참고)
 
-AI 대전, 온라인 대전, 애니메이션/사운드 연출 등 3단계 확장 기능은 포함하지 않았습니다.
+애니메이션/사운드 연출 등 남은 3단계 확장 기능은 포함하지 않았습니다.
+
+### 온라인 대전
+
+`src/net.js`가 Firebase Realtime Database로 두 브라우저를 동기화합니다. 호스트 쪽
+브라우저만 `gameLogic.js`의 뮤테이터를 호출하는 "호스트-권위(host-authority)" 구조이며,
+게스트는 행동 의도(intent)만 보내고 호스트가 적용한 뒤 다시 브로드캐스트한 뷰만
+그대로 렌더링합니다. 상대의 손패/뽑기덱/버림덱 내용과 미체크 빙고 칸 숫자는
+`redactStateForPlayer()`로 걸러낸 "플레이어별 뷰"만 네트워크에 기록됩니다(원본
+state는 절대 그대로 전송하지 않음). RTDB 경로: `games/bingoroplus/rooms/<roomCode>`
+(여러 게임이 함께 입주하는 공유 Firebase 프로젝트 규약).
+
+실제 배포에서 온라인 대전을 쓰려면 `src/firebase-config.js`의 `FIREBASE_CONFIG`에
+프로젝트 키를 채워 넣어야 합니다(현재는 자리표시자만 있음).
 
 ## 코드 구조
 
 - `src/config.js` — 상수, 게임 단계(GAME_PHASE), 빙고 라인 좌표
 - `src/gameLogic.js` — 순수 게임 로직(보드/시장 생성, 카드 사용, 보너스턴, 빙고 판정, 승리 판정)
+- `src/ai.js` — AI 대전 상대의 행동 결정 로직
 - `src/ui.js` — 상태를 DOM으로 렌더링
-- `src/main.js` — 이벤트 위임 및 턴 흐름 제어
+- `src/main.js` — 이벤트 위임, 턴 흐름 제어, 온라인 모드 배선
+- `src/net.js` — Firebase RTDB 온라인 동기화 (방 생성/참가, 상태 리댁션, seq 가드)
+- `src/firebase-config.js` — 공유 Firebase 프로젝트 설정 (실제 키는 아직 비어있음)

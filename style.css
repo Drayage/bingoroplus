@@ -515,6 +515,59 @@ body {
   color: #ffd479;
 }
 
+.text-input {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 2px solid #dde3f0;
+  font-size: 14px;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.text-input:focus {
+  outline: none;
+  border-color: #2b7a4b;
+}
+
+.online-error {
+  background: #fdecea;
+  color: #c0392b;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.room-code-box {
+  text-align: center;
+  font-size: 18px;
+  background: #eef0f4;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 16px;
+  letter-spacing: 2px;
+}
+
+.player-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.player-row {
+  background: #eef0f4;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+
+.online-screen .btn-secondary {
+  margin-top: 12px;
+  width: 100%;
+}
+
 @media (max-width: 480px) {
   .meta-row {
     font-size: 11px;

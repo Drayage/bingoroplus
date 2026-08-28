@@ -45,7 +45,7 @@ function renderBoard(player, { highlightNumber, highlightIfMarked, hideUnmarked,
       }
     }
 
-    const hidden = hideUnmarked && !cell.marked;
+    const hidden = (hideUnmarked && !cell.marked) || cell.number == null;
     if (hidden) classes.push("hidden-cell");
     const cellEl = el("div", classes.join(" "), hidden ? "" : String(cell.number));
     grid.appendChild(cellEl);
@@ -77,15 +77,19 @@ function renderOpponentPanel(state, perspectiveId, settings) {
       `<span class="meta-pill">손패 ${opp.hand.length}장</span>`
   );
   panel.appendChild(meta);
+  // Online play: the opponent's unmarked numbers are already stripped out of
+  // the redacted state we received (see net.js redactStateForPlayer), so
+  // hideUnmarked here is belt-and-suspenders — it also drives the note below.
+  const boardForcedHidden = settings.mode === "online";
   panel.appendChild(
     renderBoard(opp, {
       highlightNumber,
       highlightIfMarked,
-      hideUnmarked: settings.hideOpponentBoard,
+      hideUnmarked: settings.hideOpponentBoard || boardForcedHidden,
       recentChangeMap: recentChangeMapFor(state, oppId),
     })
   );
-  if (settings.hideOpponentBoard) {
+  if (settings.hideOpponentBoard || boardForcedHidden) {
     panel.appendChild(el("div", "empty-note", "빙고판 비공개 - 체크된 숫자만 표시됩니다."));
   }
   return panel;
@@ -117,7 +121,7 @@ function renderMarket(state, isMyTurn) {
 
 function phaseMessage(state, settings, isMyTurn) {
   const player = state.players[state.currentPlayerId];
-  if (settings.mode === "ai" && !isMyTurn) {
+  if ((settings.mode === "ai" || settings.mode === "online") && !isMyTurn) {
     return `${player.name}가 턴을 진행 중입니다...`;
   }
   switch (state.phase) {
@@ -139,7 +143,7 @@ function phaseMessage(state, settings, isMyTurn) {
 function renderCenterPanel(state, ui, settings, isMyTurn) {
   const panel = el("section", "panel center-panel");
   const banner = el("div", "turn-banner", phaseMessage(state, settings, isMyTurn));
-  if (settings.mode === "ai" && !isMyTurn && state.phase !== "GAME_OVER") {
+  if ((settings.mode === "ai" || settings.mode === "online") && !isMyTurn && state.phase !== "GAME_OVER") {
     banner.classList.add("thinking");
   }
   panel.appendChild(banner);
@@ -456,13 +460,17 @@ export function renderSetupScreen(settings) {
 
   const form = el("div", "setup-form");
 
-  // Opponent board visibility
-  const sectionVisibility = el("div", "setup-section");
-  sectionVisibility.appendChild(el("h3", "setup-label", "상대 빙고판"));
-  sectionVisibility.appendChild(
-    renderToggleRow("toggle-hide-opponent", settings.hideOpponentBoard, "상대 빙고판 비공개 (체크된 숫자만 표시)")
-  );
-  form.appendChild(sectionVisibility);
+  // Opponent board visibility — moot for online play, where the opponent's
+  // unmarked numbers are always redacted at the network layer regardless of
+  // this toggle, so hide the (misleading) control in that mode.
+  if (settings.mode !== "online") {
+    const sectionVisibility = el("div", "setup-section");
+    sectionVisibility.appendChild(el("h3", "setup-label", "상대 빙고판"));
+    sectionVisibility.appendChild(
+      renderToggleRow("toggle-hide-opponent", settings.hideOpponentBoard, "상대 빙고판 비공개 (체크된 숫자만 표시)")
+    );
+    form.appendChild(sectionVisibility);
+  }
 
   // Line-completion rewards (multi-select)
   const sectionRewards = el("div", "setup-section");
@@ -508,21 +516,114 @@ export function renderSetupScreen(settings) {
   const aiBtn = el("button", "chip" + (settings.mode === "ai" ? " chip-active" : ""), "AI와 대전");
   aiBtn.dataset.action = "set-mode";
   aiBtn.dataset.mode = "ai";
+  const onlineBtn = el("button", "chip" + (settings.mode === "online" ? " chip-active" : ""), "온라인 대전");
+  onlineBtn.dataset.action = "set-mode";
+  onlineBtn.dataset.mode = "online";
   modeRow.appendChild(pvpBtn);
   modeRow.appendChild(aiBtn);
+  modeRow.appendChild(onlineBtn);
   sectionMode.appendChild(modeRow);
   form.appendChild(sectionMode);
 
   root.appendChild(form);
 
-  const startBtn = el("button", "btn btn-primary start-btn", "게임 시작");
+  const startBtn = el(
+    "button",
+    "btn btn-primary start-btn",
+    settings.mode === "online" ? "온라인 대전 시작" : "게임 시작"
+  );
   startBtn.dataset.action = "start-game";
   root.appendChild(startBtn);
 
   return root;
 }
 
-export function render(state, ui, settings, root) {
+/**
+ * Online lobby / room-code screen. `model` is a plain data bundle assembled
+ * by main.js from its `net` connection state + `ui.online` — this module
+ * never imports net.js directly, matching the "ui.js only takes plain data"
+ * architecture used everywhere else.
+ */
+export function renderOnlineScreen(model) {
+  const root = el("div", "setup-screen online-screen");
+  root.appendChild(el("div", "title-badge", "SUM BINGO"));
+  root.appendChild(el("p", "setup-subtitle", "온라인 대전"));
+
+  if (model.error) {
+    root.appendChild(el("div", "online-error", model.error));
+  }
+
+  if (model.step === "menu") {
+    const nameSection = el("div", "setup-section");
+    nameSection.appendChild(el("h3", "setup-label", "닉네임"));
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.className = "text-input";
+    nameInput.placeholder = "이름 (선택)";
+    nameInput.value = model.nameInput || "";
+    nameInput.dataset.action = "online-set-name";
+    nameSection.appendChild(nameInput);
+    root.appendChild(nameSection);
+
+    const hostSection = el("div", "setup-section");
+    const createBtn = el("button", "btn btn-primary start-btn", "방 만들기 (호스트)");
+    createBtn.dataset.action = "online-create";
+    hostSection.appendChild(createBtn);
+    root.appendChild(hostSection);
+
+    const joinSection = el("div", "setup-section");
+    joinSection.appendChild(el("h3", "setup-label", "참가하기"));
+    const codeInput = document.createElement("input");
+    codeInput.type = "text";
+    codeInput.className = "text-input";
+    codeInput.placeholder = "방 코드";
+    codeInput.value = model.joinCodeInput || "";
+    codeInput.dataset.action = "online-set-code";
+    joinSection.appendChild(codeInput);
+    const joinBtn = el("button", "btn btn-secondary", "참가하기");
+    joinBtn.dataset.action = "online-join";
+    joinSection.appendChild(joinBtn);
+    root.appendChild(joinSection);
+
+    if (model.hasRejoinInfo) {
+      const rejoinSection = el("div", "setup-section");
+      const rejoinBtn = el("button", "btn btn-secondary", "이전 방 재접속");
+      rejoinBtn.dataset.action = "online-rejoin";
+      rejoinSection.appendChild(rejoinBtn);
+      root.appendChild(rejoinSection);
+    }
+  } else if (model.step === "host-waiting" || model.step === "guest-waiting") {
+    root.appendChild(el("div", "room-code-box", `방 코드: <strong>${model.roomCode || "-"}</strong>`));
+
+    const list = el("div", "player-list");
+    for (const pid of ["P1", "P2"]) {
+      const p = model.players[pid];
+      const status = p ? (p.online === false ? " (오프라인)" : "") : "";
+      const label = p ? p.name : "대기 중...";
+      const mine = pid === model.myPlayerId ? " (나)" : "";
+      list.appendChild(el("div", "player-row", `${pid}: ${label}${status}${mine}`));
+    }
+    root.appendChild(list);
+
+    if (model.step === "host-waiting") {
+      const ready = Boolean(model.players.P2 && model.players.P2.online !== false);
+      const startBtn = el("button", "btn btn-primary start-btn", ready ? "게임 시작" : "상대 대기중...");
+      startBtn.dataset.action = "online-start";
+      startBtn.disabled = !ready;
+      root.appendChild(startBtn);
+    } else {
+      root.appendChild(el("p", "empty-note", "호스트가 게임을 시작하면 자동으로 시작됩니다."));
+    }
+  }
+
+  const backBtn = el("button", "btn btn-secondary", "나가기");
+  backBtn.dataset.action = model.step === "menu" ? "back-to-setup" : "online-leave";
+  root.appendChild(backBtn);
+
+  return root;
+}
+
+export function render(state, ui, settings, root, perspectiveIdOverride) {
   root.innerHTML = "";
 
   if (ui.view === "setup") {
@@ -535,7 +636,7 @@ export function render(state, ui, settings, root) {
     return;
   }
 
-  const perspectiveId = settings.mode === "ai" ? HUMAN_ID : state.currentPlayerId;
+  const perspectiveId = perspectiveIdOverride || (settings.mode === "ai" ? HUMAN_ID : state.currentPlayerId);
   const isMyTurn = state.currentPlayerId === perspectiveId;
 
   const app = el("div", "app");
@@ -547,8 +648,11 @@ export function render(state, ui, settings, root) {
 
   if (state.phase === "GAME_OVER") {
     root.appendChild(renderGameOverOverlay(state));
-  } else if (ui.banishPrompt) {
-    root.appendChild(renderBanishPrompt(state, ui.banishPrompt.playerId));
+  } else if (state.banishPrompt && isMyTurn) {
+    // Only the player who must choose sees the picker — for the other
+    // player state.banishPrompt.playerId always equals currentPlayerId, so
+    // isMyTurn is already false and their action buttons are disabled too.
+    root.appendChild(renderBanishPrompt(state, state.banishPrompt.playerId));
   } else if (ui.pileModal) {
     root.appendChild(renderPileModal(ui.pileModal.kind, state.players[perspectiveId]));
   }
