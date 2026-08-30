@@ -26,6 +26,7 @@ import {
   setupPresence,
   writeState,
   redactStateForPlayer,
+  hydrateNetworkState,
 } from "./net.js";
 
 const HUMAN_PLAYER_ID = "P1";
@@ -133,7 +134,7 @@ function onRoomSnapshot(room) {
   // Guest: once the host has started the game, our own screen is driven
   // entirely by the redacted view the host broadcasts for us.
   if (room.phase === "playing" && room.views && room.views[net.myPlayerId]) {
-    state = room.views[net.myPlayerId];
+    state = hydrateNetworkState(room.views[net.myPlayerId]);
     if (ui.view !== "game") {
       ui = { selectedCardIds: [], view: "game", toast: null, pileModal: null, lastTurnSummary: null, online: ui.online };
       lastScrollKey = null;

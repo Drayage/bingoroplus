@@ -156,6 +156,32 @@ export function redactStateForPlayer(state, viewerId) {
   return clone;
 }
 
+// Firebase RTDB has no way to represent an empty array/object: writing `[]`
+// removes that key entirely, so it comes back as `undefined` on read. A
+// player's drawPile/discardPile/bonusRevealCards/hand/completedLines are all
+// legitimately empty at various points (start of game, right after a
+// discard-hand action, ...), so every view that round-trips through the
+// network needs those keys restored to `[]` before ui.js touches them —
+// ui.js assumes real arrays (`.length`, `.map`) the same way it does for the
+// host's own in-memory state, which never goes through this serialization.
+function hydratePlayer(player) {
+  if (!player) return player;
+  player.hand = player.hand || [];
+  player.drawPile = player.drawPile || [];
+  player.discardPile = player.discardPile || [];
+  player.bonusRevealCards = player.bonusRevealCards || [];
+  player.completedLines = player.completedLines || [];
+  return player;
+}
+
+/** Restore RTDB's dropped-empty-array fields on a view before rendering it. */
+export function hydrateNetworkState(view) {
+  if (!view || !view.players) return view;
+  hydratePlayer(view.players.P1);
+  hydratePlayer(view.players.P2);
+  return view;
+}
+
 // ── 상태 동기화 (호스트 전용 쓰기, seq 가드) ──────────────────────────────────
 /**
  * 호스트가 턴 흐름이 한 단계 전이될 때마다 호출한다. 원본 state는 절대 그대로
